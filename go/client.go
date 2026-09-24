@@ -243,7 +243,7 @@ func normalizeMimoSummaryData(d *MimoSummaryData) {
 		d.Plan = nil
 	}
 	// Backfill MonthUsage from Cards.Total when using the updated mimo-usage /api/v1/summary
-	if d.MonthUsage == nil && d.Cards != nil && d.Cards.Total != nil && d.Cards.Total.Limit > 0 {
+	if d.MonthUsage == nil && d.Cards != nil && d.Cards.Total != nil {
 		pct := 0.0
 		if d.Cards.Total.Percent != nil {
 			pct = *d.Cards.Total.Percent
@@ -307,7 +307,49 @@ func (c *externalQuotaClient) CheckMimoQuota(ctx context.Context, cfg pluginConf
 		maxPercent = maxPercent / 100.0
 	}
 
-	// 2. Token quota check (monthUsage or planUsage)
+	// 2. Direct Cards.Total check (new mimo-usage API)
+	if summary.Cards != nil && summary.Cards.Total != nil {
+		ratio := 0.0
+		if summary.Cards.Total.Ratio != nil {
+			ratio = *summary.Cards.Total.Ratio
+		} else if summary.Cards.Total.Percent != nil {
+			ratio = *summary.Cards.Total.Percent / 100.0
+		} else if summary.Cards.Total.Limit > 0 {
+			ratio = summary.Cards.Total.Used / summary.Cards.Total.Limit
+		}
+
+		var remaining int64
+		if summary.Cards.Total.Remaining != nil {
+			remaining = int64(*summary.Cards.Total.Remaining)
+		} else if summary.Cards.Total.Limit > 0 {
+			remaining = int64(summary.Cards.Total.Limit - summary.Cards.Total.Used)
+		}
+		if remaining < 0 {
+			remaining = 0
+		}
+
+		resetAt := ""
+		if summary.Plan != nil {
+			resetAt = summary.Plan.CurrentPeriodEnd
+		}
+
+		if ratio >= maxPercent || (summary.Cards.Total.Limit > 0 && summary.Cards.Total.Used >= summary.Cards.Total.Limit) {
+			return CheckQuotaResponse{
+				Allowed:        false,
+				RemainingQuota: remaining,
+				Reason:         fmt.Sprintf("MiMo token quota limit reached (%.1f%% used)", ratio*100),
+				ResetAt:        resetAt,
+			}, nil
+		}
+
+		return CheckQuotaResponse{
+			Allowed:        true,
+			RemainingQuota: remaining,
+			ResetAt:        resetAt,
+		}, nil
+	}
+
+	// 3. Fallback to MonthUsage / PlanUsage (legacy mimo-usage API)
 	usageItem := summary.MonthUsage
 	if usageItem == nil {
 		usageItem = summary.PlanUsage

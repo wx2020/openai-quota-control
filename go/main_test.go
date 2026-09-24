@@ -1094,4 +1094,34 @@ func TestMimoNewCardsSummaryAPI(t *testing.T) {
 	if !strings.Contains(bodyStr, "Lite") || !strings.Contains(bodyStr, "v0.3.0") || !strings.Contains(bodyStr, "AUTHORIZED") {
 		t.Fatalf("unexpected dashboard HTML body: %s", bodyStr)
 	}
+
+	// 4. Test intercept by model name (e.g. mimo-v2-flash) when quota limit exceeded
+	resetStateForTest(t, pluginConfig{
+		APIType:             "mimo",
+		TargetProviders:     []string{"openai-compatibility"},
+		MimoMaxUsagePercent: 0.001, // 0.1% limit (while usage is 5%, ratio 0.05)
+	}, server.URL)
+
+	interceptReqBytes, _ := json.Marshal(pluginapi.RequestInterceptRequest{
+		Model: "mimo-v2-flash",
+		Headers: http.Header{
+			"Content-Type": {"application/json"},
+		},
+		Body: []byte(`{"model":"mimo-v2-flash","messages":[{"role":"user","content":"hi"}]}`),
+	})
+	interRaw, errInter := handleMethod(pluginabi.MethodRequestInterceptAfter, interceptReqBytes)
+	if errInter != nil {
+		t.Fatalf("request.intercept_after failed: %v", errInter)
+	}
+	var interEnv envelope
+	_ = json.Unmarshal(interRaw, &interEnv)
+	var interResp pluginapi.RequestInterceptResponse
+	_ = json.Unmarshal(interEnv.Result, &interResp)
+	if !interResp.Terminate || interResp.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("expected request to be terminated with 429, got terminate=%v code=%d", interResp.Terminate, interResp.StatusCode)
+	}
+	if interResp.ResponseHeaders.Get("X-Quota-Exceeded") != "true" {
+		t.Fatalf("expected X-Quota-Exceeded header in response: %+v", interResp.ResponseHeaders)
+	}
 }
+

@@ -227,6 +227,7 @@ func configure(raw []byte) error {
 	if state.cache == nil {
 		state.cache = newQuotaCache(time.Duration(cfg.CacheTTLSeconds)*time.Second, cfg.MaxCacheEntries)
 	} else {
+		state.cache.Clear() // Clear cached allow/deny decisions so config changes take effect immediately
 		state.cache.defaultTTL = time.Duration(cfg.CacheTTLSeconds) * time.Second
 		state.cache.maxEntries = cfg.MaxCacheEntries
 	}
@@ -360,8 +361,17 @@ func interceptAfterAuth(raw []byte) ([]byte, error) {
 		provider = req.SourceFormat
 	}
 
-	// If no auth ID is available yet or provider/authID does not match target providers, allow pass-through
-	if authID == "" || !isTargetProvider(provider, authID, cfg.TargetProviders) {
+	// In mimo mode or general mode, fallback authID to model if empty so cache and checks still work
+	if authID == "" {
+		if req.Model != "" {
+			authID = req.Model
+		} else {
+			authID = "default"
+		}
+	}
+
+	// Check if this request matches our target providers/models/auth
+	if !isTargetProvider(provider, authID, req.Model, req.RequestedModel, cfg.TargetProviders, cfg.APIType) {
 		return okEnvelope(pluginapi.RequestInterceptResponse{Headers: req.Headers, Body: req.Body})
 	}
 
@@ -444,9 +454,9 @@ func handleUsage(raw []byte) ([]byte, error) {
 
 	authID := strings.TrimSpace(record.AuthID)
 	if authID == "" {
-		return okEnvelope(struct{}{})
+		authID = record.Model
 	}
-	if !isTargetProvider(record.Provider, authID, cfg.TargetProviders) {
+	if !isTargetProvider(record.Provider, authID, record.Model, record.Model, cfg.TargetProviders, cfg.APIType) {
 		return okEnvelope(struct{}{})
 	}
 	if cfg.APIType == "mimo" {
@@ -853,9 +863,21 @@ func expandSupportedProviders(targets []string, apiType string) []string {
 	return out
 }
 
-func isTargetProvider(provider, authID string, targets []string) bool {
+func isTargetProvider(provider, authID, model, requestedModel string, targets []string, apiType string) bool {
 	cleanProvider := strings.ToLower(strings.TrimSpace(provider))
 	cleanAuthID := strings.ToLower(strings.TrimSpace(authID))
+	cleanModel := strings.ToLower(strings.TrimSpace(model))
+	cleanReqModel := strings.ToLower(strings.TrimSpace(requestedModel))
+
+	// In mimo mode, any request for mimo/xiaomi models, mimo auth, or openai-compat channel should be controlled
+	if apiType == "mimo" {
+		if strings.Contains(cleanModel, "mimo") || strings.Contains(cleanReqModel, "mimo") ||
+			strings.Contains(cleanAuthID, "mimo") || strings.Contains(cleanProvider, "mimo") ||
+			strings.Contains(cleanModel, "xiaomi") || strings.Contains(cleanReqModel, "xiaomi") ||
+			strings.Contains(cleanAuthID, "xiaomi") || strings.Contains(cleanProvider, "xiaomi") {
+			return true
+		}
+	}
 
 	var compatChannel string
 	if strings.HasPrefix(cleanAuthID, "openai-compatibility:") {
@@ -869,10 +891,11 @@ func isTargetProvider(provider, authID string, targets []string) bool {
 	}
 
 	isOpenAICompat := strings.HasPrefix(cleanAuthID, "openai-compatibility:") ||
+		strings.HasPrefix(cleanAuthID, "openai-compatible") ||
 		strings.HasPrefix(cleanProvider, "openai-compatib")
 
 	if len(targets) == 0 {
-		return isOpenAICompat
+		return isOpenAICompat || cleanProvider == "openai"
 	}
 
 	for _, target := range targets {
@@ -889,6 +912,15 @@ func isTargetProvider(provider, authID string, targets []string) bool {
 			return true
 		}
 		if cleanProvider != "" && cleanProvider != "openai" && (cleanProvider == cleanTarget || strings.Contains(cleanProvider, cleanTarget)) {
+			return true
+		}
+		if cleanAuthID != "" && (cleanAuthID == cleanTarget || strings.Contains(cleanAuthID, cleanTarget)) {
+			return true
+		}
+		if cleanModel != "" && (cleanModel == cleanTarget || strings.Contains(cleanModel, cleanTarget)) {
+			return true
+		}
+		if cleanReqModel != "" && (cleanReqModel == cleanTarget || strings.Contains(cleanReqModel, cleanTarget)) {
 			return true
 		}
 	}
@@ -962,6 +994,18 @@ func managementHandle(raw []byte) ([]byte, error) {
 			"version":     "0.3.0",
 			"refreshed":   refreshed,
 			"api_type":    cfg.APIType,
+			"config": map[string]any{
+				"api_type":               cfg.APIType,
+				"external_api_url":       cfg.ExternalAPIURL,
+				"has_external_api_key":   cfg.ExternalAPIKey != "",
+				"target_providers":       cfg.TargetProviders,
+				"mimo_max_usage_percent": cfg.MimoMaxUsagePercent,
+				"mimo_min_balance":       cfg.MimoMinBalance,
+				"mimo_enforce_expiry":    cfg.MimoEnforceExpiry,
+				"failure_mode":           cfg.FailureMode,
+				"timeout_ms":             cfg.TimeoutMS,
+				"cache_ttl_seconds":      cfg.CacheTTLSeconds,
+			},
 			"quota":       quotaResp,
 			"mimo_raw":    mimoData,
 			"checked_at":  time.Now().Format(time.RFC3339),
