@@ -133,19 +133,91 @@ type openAIErrorDetail struct {
 
 // MimoSummaryResponse wraps the response from mimo-usage GET /api/v1/summary.
 type MimoSummaryResponse struct {
-	Data MimoSummaryData `json:"data"`
-	Meta map[string]any  `json:"meta,omitempty"`
+	Data   MimoSummaryData `json:"data"`
+	Errors map[string]any  `json:"errors,omitempty"`
+	Meta   map[string]any  `json:"meta,omitempty"`
 }
 
 // MimoSummaryData represents the aggregated data block returned by mimo-usage.
 type MimoSummaryData struct {
-	Plan       *MimoPlanDetail       `json:"plan,omitempty"`
-	MonthUsage *MimoMonthUsageItem   `json:"monthUsage,omitempty"`
-	PlanUsage  *MimoMonthUsageItem   `json:"planUsage,omitempty"`
-	Balance    *MimoBalance          `json:"balance,omitempty"`
-	TokenUsage *MimoTokenUsageDetail `json:"tokenUsage,omitempty"`
-	CostUsage  *MimoCostUsageDetail  `json:"costUsage,omitempty"`
-	RateLimit  *MimoRateLimitDetail  `json:"rateLimit,omitempty"`
+	Plan         *MimoPlanDetail         `json:"plan,omitempty"`
+	Cards        *MimoCardsDetail        `json:"cards,omitempty"`
+	Account      *MimoAccountDetail      `json:"account,omitempty"`
+	Verification *MimoVerificationDetail `json:"verification,omitempty"`
+	Balance      *MimoBalance            `json:"balance,omitempty"`
+	RateLimit    *MimoRateLimitDetail    `json:"rateLimit,omitempty"`
+	MonthUsage   *MimoMonthUsageItem     `json:"monthUsage,omitempty"`
+	PlanUsage    *MimoMonthUsageItem     `json:"planUsage,omitempty"`
+	TokenUsage   *MimoTokenUsageDetail   `json:"tokenUsage,omitempty"`
+	CostUsage    *MimoCostUsageDetail    `json:"costUsage,omitempty"`
+	Errors       map[string]any          `json:"errors,omitempty"`
+}
+
+// MimoCardsDetail contains pre-computed card metrics from mimo-usage.
+type MimoCardsDetail struct {
+	Today   *MimoCardToday   `json:"today,omitempty"`
+	Total   *MimoCardTotal   `json:"total,omitempty"`
+	Tokens  *MimoCardTokens  `json:"tokens,omitempty"`
+	Credits *MimoCardCredits `json:"credits,omitempty"`
+}
+
+// MimoCardToday represents today's usage card metrics.
+type MimoCardToday struct {
+	Credits    float64  `json:"credits"`
+	DailyQuota *float64 `json:"dailyQuota,omitempty"`
+	Percent    *float64 `json:"percent,omitempty"`
+	Ratio      *float64 `json:"ratio,omitempty"`
+	Bar        *float64 `json:"bar,omitempty"`
+	Warn       bool     `json:"warn"`
+	Tokens     float64  `json:"tokens"`
+	Requests   int64    `json:"requests"`
+}
+
+// MimoCardTotal represents package total usage card metrics.
+type MimoCardTotal struct {
+	Used      float64  `json:"used"`
+	Limit     float64  `json:"limit"`
+	Remaining *float64 `json:"remaining,omitempty"`
+	Percent   *float64 `json:"percent,omitempty"`
+	Ratio     *float64 `json:"ratio,omitempty"`
+	Bar       *float64 `json:"bar,omitempty"`
+	Days      *int     `json:"days,omitempty"`
+}
+
+// MimoCardTokens represents token statistics card metrics.
+type MimoCardTokens struct {
+	Today         float64 `json:"today"`
+	TodayRequests int64   `json:"todayRequests"`
+	Month         float64 `json:"month"`
+	MonthRequests int64   `json:"monthRequests"`
+	MonthDays     int     `json:"monthDays"`
+	MonthAverage  float64 `json:"monthAverage"`
+	AllTime       float64 `json:"allTime"`
+}
+
+// MimoCardCredits represents credit statistics card metrics.
+type MimoCardCredits struct {
+	Today float64  `json:"today"`
+	Month float64  `json:"month"`
+	Used  float64  `json:"used"`
+	Delta *float64 `json:"delta,omitempty"`
+}
+
+// MimoAccountDetail represents user account info.
+type MimoAccountDetail struct {
+	UserID any    `json:"userId,omitempty"`
+	Phone  string `json:"phone,omitempty"`
+	Email  string `json:"email,omitempty"`
+	Weixin string `json:"weixin,omitempty"`
+}
+
+// MimoVerificationDetail represents real-name verification status.
+type MimoVerificationDetail struct {
+	State        string `json:"state,omitempty"`
+	RealName     string `json:"realName,omitempty"`
+	CardType     string `json:"cardType,omitempty"`
+	AuthTime     string `json:"authTime,omitempty"`
+	AuthorizeURL string `json:"authorizeUrl,omitempty"`
 }
 
 // MimoPlanDetail conveys subscription and period status.

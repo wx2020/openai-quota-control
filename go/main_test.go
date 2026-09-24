@@ -1095,4 +1095,3 @@ func TestMimoNewCardsSummaryAPI(t *testing.T) {
 		t.Fatalf("unexpected dashboard HTML body: %s", bodyStr)
 	}
 }
-

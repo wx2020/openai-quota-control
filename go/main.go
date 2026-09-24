@@ -654,6 +654,17 @@ func formatMimoQuotaResponse(data *MimoSummaryData) pluginapi.QuotaFetchResponse
 			Value:  *data.Cards.Total.Remaining,
 			Format: "number",
 		})
+	} else if data.MonthUsage != nil {
+		rem := data.MonthUsage.Limit - data.MonthUsage.Used
+		if rem < 0 {
+			rem = 0
+		}
+		resp.Summary = append(resp.Summary, pluginapi.QuotaMetric{
+			Key:    "remaining_tokens",
+			Label:  "Remaining Tokens",
+			Value:  rem,
+			Format: "number",
+		})
 	}
 	if data.Cards != nil && data.Cards.Today != nil {
 		resp.Summary = append(resp.Summary, pluginapi.QuotaMetric{
@@ -993,7 +1004,6 @@ func renderDashboardHTML(cfg pluginConfig, data *MimoSummaryData, quota pluginap
 	hasToday := false
 
 	balanceStr := "-"
-	monthCostStr := "-"
 	var monthTok, allTimeTok float64
 	daysLeftStr := "-"
 
@@ -1100,10 +1110,6 @@ func renderDashboardHTML(cfg pluginConfig, data *MimoSummaryData, quota pluginap
 			balanceStr = fmt.Sprintf("%.2f %s", *data.Balance.Balance, cur)
 		} else if data.Cards != nil && data.Cards.Total != nil && data.Cards.Total.Limit > 0 {
 			balanceStr = "0.00 CNY (套餐包月)"
-		}
-
-		if data.CostUsage != nil && data.CostUsage.CurrentMonthCost != "" {
-			monthCostStr = data.CostUsage.CurrentMonthCost + " CNY"
 		}
 	} else if quota.Subscription != nil {
 		planName = quota.Subscription.Plan
